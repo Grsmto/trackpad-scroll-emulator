@@ -115,6 +115,7 @@ export default class SimpleBar {
   static defaultOptions = {
     autoHide: true,
     forceVisible: false,
+    lazyInitialization: false,
     classNames: {
       contentEl: 'simplebar-content',
       contentWrapper: 'simplebar-content-wrapper',
@@ -265,11 +266,32 @@ export default class SimpleBar {
     if (canUseDOM) {
       this.initDOM();
 
-      this.scrollbarWidth = scrollbarWidth();
+      const measureAndListen = () => {
+        this.scrollbarWidth = scrollbarWidth();
+        this.recalculate();
+        this.initListeners();
+      };
 
-      this.recalculate();
+      if (this.options.lazyInitialization) {
+        // If we are lazily initializing, then hide the native scrollbars now
+        // Otherwise there might be some flashing
+        this.hideNativeScrollbar();
 
-      this.initListeners();
+        if (window.requestIdleCallback) {
+          // In browsers that support it, wait for idle.
+          this.lazyTimeout = window.requestIdleCallback(() => {
+            this.lazyTimeout = null;
+            measureAndListen();
+          });
+        } else {
+          this.lazyTimeout = window.setTimeout(() => {
+            this.lazyTimeout = null;
+            measureAndListen();
+          }, 0);
+        }
+      } else {
+        measureAndListen();
+      }
     }
   }
 
@@ -897,7 +919,12 @@ export default class SimpleBar {
    * UnMount mutation observer and delete SimpleBar instance from DOM element
    */
   unMount() {
-    this.removeListeners();
+    if (this.lazyTimeout) {
+      window.clearTimeout(this.lazyTimeout);
+    } else {
+      this.removeListeners();
+    }
+
     this.el.SimpleBar = null;
   }
 
